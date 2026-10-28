@@ -1,0 +1,38 @@
+{
+  "version": "2.1.0",
+  "date": "2026-10-28",
+  "offline_checks": {
+    "node_config_links_rollback": 63,
+    "existing_service_compatibility": 7,
+    "menu_shortcut": 8,
+    "quota_system_integration": 8,
+    "quota_state_rules_failure_recovery": 60
+  },
+  "offline_total": 146,
+  "quota_execution_phases": {
+    "full_candidate_assertions_before_test_harness_failure": 51,
+    "test_harness_issue": "parameter-indirection syntax under sh + nounset; fixed in test only",
+    "isolated_recovery_fixture_assertions": 12,
+    "isolated_recovery_exit_code": 0,
+    "overlapping_assertions": 3,
+    "single_complete_60_assertion_run": false
+  },
+  "bash_syntax": "passed",
+  "launcher_help_version": "passed",
+  "real_sing_box_check": {
+    "version": "1.14.4",
+    "platform": "windows-amd64",
+    "sample_inbounds": 9,
+    "exit_code": 0
+  },
+  "linux_kernel_nft_live_tested": false,
+  "deployed_to_user_vps": false,
+  "metering": "cumulative client-facing packet bytes, upload plus download",
+  "reset": "manual selected-node epoch advance",
+  "save_interval_seconds": 5,
+  "manager_sha256": "6278581fdfabbe38dce1653a985aef3d4d70c53140d97e81d416dddb71739342",
+  "installer_sha256": "8d6d0cc0cdb19afd8b4a40647d572b85ed6f69b591d052fb0c785dfa99e56786",
+  "published_to_public_url_at_test_time": false,
+  "publication_repository": "https://github.com/jane-jnee/proxy-node-manager",
+  "installation_url": "https://raw.githubusercontent.com/jane-jnee/proxy-node-manager/main/installer.sh"
+}
