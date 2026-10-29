@@ -4,10 +4,12 @@
   "bytes": 27329,
   "sha256": "949b360ee9cf92464cd45bb41505e05a6abdc9c046495191f7d2da5de36b7af2",
   "executed": false,
-  "custom_version": "2.1.0",
+  "custom_version": "2.1.1",
   "original_executed_locally": false,
   "embedded_server_credentials": false,
   "public_hosting_at_test_time": "not performed",
   "publication_repository": "https://github.com/jane-jnee/proxy-node-manager",
-  "installation_url": "https://raw.githubusercontent.com/jane-jnee/proxy-node-manager/main/installer.sh"
+  "installation_url": "https://raw.githubusercontent.com/jane-jnee/proxy-node-manager/main/installer.sh",
+  "compatibility_fix": "nftables 1.0.2 table comment omitted from JSON",
+  "fix_date": "2026-10-29"
 }

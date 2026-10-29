@@ -1,6 +1,21 @@
-# 定制节点管理 v2.1.0
+# 定制节点管理 v2.1.1
 
 适用：自有 Linux 服务器。无广告，支持 VLESS + TCP + Reality、VMess + WebSocket、Shadowsocks；每种协议可以创建多条独立节点。
+
+## v2.1.1 兼容性修复（2026-10-29）
+
+修复 Ubuntu 22.04 常见 nftables 1.0.2 的流量服务启动失败：旧版本的 JSON 输出不含表注释，旧校验会报“流量表的归属、对象或数值异常”。当且仅当 JSON 缺少该字段时，新版独立读取原生输出，核对表名、family、handle 和表级归属注释，再继续原有链、规则和额度校验。已有 JSON 明确显示错误或空归属时仍拒绝运行。
+
+不删除流量状态、不清零用量、不清空防火墙。累计额度及手动重置行为保持原样。
+
+出现上述报错时，先停止失败重试，再执行本仓库更新入口：
+
+```bash
+systemctl stop proxy-node-quota.service
+bash <(curl -fsSL https://raw.githubusercontent.com/jane-jnee/proxy-node-manager/main/installer.sh)
+```
+
+菜单标题应显示 **v2.1.1**。先选 **13** 恢复并查看流量服务；若先前新增流程被中断，服务恢复后再选 **1** 新增该节点。已有节点不必删除或重新创建，也不要选 15 清零。实际 Linux 服务恢复结果仍需在目标服务器确认。
 
 ## 新增功能
 

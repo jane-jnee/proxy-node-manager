@@ -10,12 +10,12 @@ cleanup_manager_temp() {
 trap cleanup_manager_temp EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-cat > "$manager_temp/proxy-node-manager.sh" <<'PROXY_MANAGER_EMBEDDED_V210_6278581fdfabbe38dce1653a'
+cat > "$manager_temp/proxy-node-manager.sh" <<'PROXY_MANAGER_EMBEDDED_V211_0e3d8a05a6dc97848479bef5'
 #!/usr/bin/env bash
 # Customized from dabadabader/install: advertising removed; independent nodes.
 # Run on your own Linux server. Sourcing this file performs no installation.
 
-MANAGER_VERSION='2.1.0'
+MANAGER_VERSION='2.1.1'
 WORK_DIR="${PROXY_WORK_DIR:-/etc/sing-box}"
 CONFIG_FILE="${WORK_DIR}/config.json"
 STATE_DIR="${WORK_DIR}/node-manager"
@@ -1097,10 +1097,65 @@ quota_object_id() {
     printf '%s_%s_g%s\n' "$kind" "$tag" "$epoch"
 }
 
+# nft 1.0.2 omits table comments from JSON. Verify its native table-level
+# comment and table handle before supplying that one missing JSON field.
+# An explicit JSON comment, including null or a foreign value, never falls back.
+quota_native_table_owned() {
+    local native="$1" handle="$2"
+    [[ "$handle" =~ ^[1-9][0-9]*$ ]] || return 1
+    awk -v header="table inet $QUOTA_TABLE { # handle $handle" \
+        -v owner="\tcomment \"$QUOTA_OWNER\"" '
+      BEGIN { depth=0; quoted=0; escaped=0; owners=0; bad=0 }
+      NR == 1 { if ($0 != header) bad=1 }
+      {
+        if (NR > 1 && depth == 0 && $0 !~ /^[[:space:]]*$/) bad=1;
+        if (depth == 1 && $0 ~ /^[[:space:]]*comment[[:space:]]/) {
+          owners++; if ($0 != owner) bad=1;
+        }
+        for (i=1; i<=length($0); i++) {
+          c=substr($0,i,1);
+          if (quoted) {
+            if (escaped) escaped=0;
+            else if (c == "\\") escaped=1;
+            else if (c == "\"") quoted=0;
+          } else {
+            if (c == "#") break;
+            if (c == "\"") quoted=1;
+            else if (c == "{") depth++;
+            else if (c == "}") { depth--; if (depth < 0) bad=1 }
+          }
+        }
+        if (quoted) bad=1;
+      }
+      END { exit (bad || NR < 3 || depth != 0 || owners != 1) }
+    ' <<<"$native"
+}
+
+quota_kernel_owner_json() {
+    local json="$1" handle native
+    if jq -e --arg t "$QUOTA_TABLE" \
+        'any(.nftables[]?.table?; .family == "inet" and .name == $t and has("comment"))' \
+        <<<"$json" >/dev/null; then
+        printf '%s\n' "$json"; return 0
+    fi
+    handle=$(jq -er --arg t "$QUOTA_TABLE" '
+      [.nftables[]?.table? | select(.family == "inet" and .name == $t)] |
+      if length == 1 and (.[0].handle | type == "number" and . > 0 and . == floor)
+      then .[0].handle else error("invalid table identity") end' <<<"$json") || return 1
+    native=$("$NFT_BIN" -a list table inet "$QUOTA_TABLE") || return 1
+    quota_native_table_owned "$native" "$handle" || {
+        err '旧版 nftables 的原生输出无法确认流量表归属，保留现状。'; return 1;
+    }
+    jq --arg t "$QUOTA_TABLE" --arg owner "$QUOTA_OWNER" \
+        '(.nftables[] | select(has("table")) | .table |
+          select(.family == "inet" and .name == $t) | .comment) = $owner' <<<"$json"
+}
+
 # A failure to read an existing table is not treated as an empty counter.
 quota_read_kernel() {
     local json tables
     if json=$("$NFT_BIN" -j list table inet "$QUOTA_TABLE" 2>/dev/null); then
+        json=$(quota_kernel_owner_json "$json") || return 1
         quota_validate_kernel "$json" || return 1
         printf '%s\n' "$json"; return 0
     fi
@@ -1628,6 +1683,6 @@ main() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
-PROXY_MANAGER_EMBEDDED_V210_6278581fdfabbe38dce1653a
+PROXY_MANAGER_EMBEDDED_V211_0e3d8a05a6dc97848479bef5
 bash "$manager_temp/proxy-node-manager.sh" "$@"
 exit $?
