@@ -1,15 +1,23 @@
 {
-  "version": "2.1.1",
+  "version": "2.2.0",
   "date": "2026-10-29",
-  "fix": "nftables1.0.2 missing table-comment JSON compatibility",
-  "new_compatibility_regressions": 17,
-  "quota_state_rules_failure_recovery_regressions": 60,
-  "regression_total_this_fix": 77,
-  "bash_syntax": "passed",
-  "manager_version_check": "2.1.1",
-  "linux_nft_systemd_live_tested": false,
+  "this_release_checks": {
+    "configuration_links_rollback": 63,
+    "menu_dispatch": 51,
+    "creation_autoexport_and_qr_removal": 18,
+    "nft_1_0_2_compatibility": 17,
+    "sni_syntax": 19
+  },
+  "this_release_assertion_total": 168,
+  "interactive_vless_scenarios": 9,
+  "v211_baseline_name_scenarios": 5,
+  "custom_name_connection_bug_reproduced": false,
+  "qr_code_present_in_runtime": false,
+  "quota_region_byte_identical_to_v211": true,
+  "autoexport": "Print every successful new node URI and append only this batch to a private file",
+  "linux_permissions_live_verified": false,
+  "vps_transport_connectivity_verified": false,
   "deployed_to_user_vps": false,
-  "original_v2_1_0_test_report": "https://github.com/jane-jnee/proxy-node-manager/blob/5a769a94182908d58afb96c3180b0c1e5db14055/TEST-REPORT.zh-CN.md",
-  "manager_sha256": "0e3d8a05a6dc97848479bef56200990c23e73709d827c1d3fba93602e2e9b3cf",
-  "installer_sha256": "e9f5c05f08a859ab0f3e480cb54ac017c58293cd411dc86ab7956a4cf7140670"
+  "manager_sha256": "9b2be95d1bee22ecb6a3e71084bd1403b2c04ee08cbb32635aa3f524a8e83f6d",
+  "installer_sha256": "e6830f73de60c32781d1e653dfabe0dcd72dc587fe6fa35456f1aeef69502950"
 }

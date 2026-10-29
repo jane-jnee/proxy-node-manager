@@ -2,7 +2,7 @@
 # Customized from dabadabader/install: advertising removed; independent nodes.
 # Run on your own Linux server. Sourcing this file performs no installation.
 
-MANAGER_VERSION='2.1.1'
+MANAGER_VERSION='2.2.0'
 WORK_DIR="${PROXY_WORK_DIR:-/etc/sing-box}"
 CONFIG_FILE="${WORK_DIR}/config.json"
 STATE_DIR="${WORK_DIR}/node-manager"
@@ -83,7 +83,7 @@ valid_server() {
     # Defined in the link module; use identical validation before committing.
     _links_server "$1" >/dev/null 2>&1
 }
-valid_sni() { [[ "$1" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ && "$1" != *..* ]]; }
+valid_sni() { _links_valid_hostname "$1" && [[ ! "$1" =~ ^[0-9.]+$ ]]; }
 valid_uuid() { [[ "$1" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; }
 
 port_in_use() {
@@ -1439,40 +1439,54 @@ detect_public_address() {
 ask_server() {
     local default="${1:-}" entered
     [[ -n "$default" ]] || default=$(detect_public_address)
-    prompt_read "节点对外 IP / 域名 [${default:-请填写}]：" entered || return 1
+    prompt_read "节点连接地址（仅 IP/域名，不含协议端口）[${default:-请填写}]：" entered || return 1
     SERVER_ADDRESS="${entered:-$default}"
     valid_server "$SERVER_ADDRESS" || { err '请输入不带协议和端口的 IP 或域名。'; return 1; }
 }
 
 interactive_add() {
-    local protocol="$1" count prefix sni='' private='' public='' sid='' credential pair name port tag i quota_input quota_bytes any_quota=0
-    local -a quotas=()
+    local protocol="$1" count prefix sni='' private='' public='' sid='' credential pair name port tag i quota_input quota_bytes any_quota=0 confirm links export_file
+    local -a quotas=() quota_labels=()
     ensure_dependencies && ( acquire_lock && ensure_singbox ) || return 1
     prompt_read '新增几条同协议节点？[1，最多20]：' count || return 1
     count="${count:-1}"
-    [[ "$count" =~ ^([1-9]|1[0-9]|20)$ ]] || { err '请输入 1–20。'; return 1; }
-    prompt_read "节点名称/批量名称前缀 [$protocol]：" prefix || return 1
+    [[ "$count" =~ ^([1-9]|1[0-9]|20)$ ]] || { err '数量需为 1–20。'; return 1; }
+    prompt_read "节点显示名称（仅备注；多条时自动编号）[$protocol]：" prefix || return 1
     prefix="${prefix:-$protocol}"
-    [[ ${#prefix} -le 70 && "$prefix" != *$'\n'* && "$prefix" != *$'\r'* ]] || { err '名称过长或含换行。'; return 1; }
+    [[ ${#prefix} -le 70 && "$prefix" != *[[:cntrl:]]* && -n "${prefix//[[:space:]]/}" ]] || {
+        err '名称需为 1–70 个字符，不能仅有空白或含控制字符。'; return 1;
+    }
     ask_server || return 1
     if [[ "$protocol" == vless ]]; then
-        prompt_read "Reality SNI [$DEFAULT_SNI]：" sni || return 1
+        prompt_read "Reality SNI（伪装域名，不是节点名称）[$DEFAULT_SNI]：" sni || return 1
         sni="${sni:-$DEFAULT_SNI}"
         valid_sni "$sni" || { err 'SNI 域名格式不正确。'; return 1; }
     fi
     port=$(find_free_port) || return 1
     prompt_read "第一条节点端口 [$port]：" FIRST_PORT || return 1
     port="${FIRST_PORT:-$port}"
-    valid_port "$port" || { err '端口应在 1024–65535。'; return 1; }
-    port_in_use "$port" && { err '此端口已经被配置或占用，请另选端口。'; return 1; }
+    valid_port "$port" || { err '端口应为 1024–65535。'; return 1; }
+    port_in_use "$port" && { err '此端口已经被配置或占用，请换端口。'; return 1; }
     for ((i=1; i<=count; i++)); do
         prompt_read "第 $i 条节点累计额度 GB [0=不限量，例100或0.5]：" quota_input || return 1
-        quota_bytes=$(quota_parse_gb "${quota_input:-0}") || return 1
+        quota_input="${quota_input:-0}"
+        quota_bytes=$(quota_parse_gb "$quota_input") || return 1
         quotas+=("$quota_bytes")
+        quota_labels+=("$quota_input")
         ((quota_bytes == 0)) || any_quota=1
     done
+    printf '\n创建前核对（名称只用于备注，不参与连接认证）\n名称：%s\n协议：%s\n连接地址：%s\n首个端口：%s\n数量：%s\n' "$prefix" "$protocol" "$SERVER_ADDRESS" "$port" "$count"
+    [[ "$protocol" != vless ]] || printf 'Reality SNI：%s\n' "$sni"
+    for ((i=1; i<=count; i++)); do
+        printf '第 %s 条累计额度：%s GB（0 表示不限量）\n' "$i" "${quota_labels[i-1]}"
+    done
+    prompt_read '确认创建以上节点？[Y/n]：' confirm || return 1
+    case "${confirm,,}" in ''|y|yes) ;; *) ok '已取消，未新增节点。'; return 0 ;; esac
     ensure_service || return 1
     if ((any_quota)) || quota_enabled; then quota_enable_runtime || return 1; fi
+    export_file=$(mktemp "$STATE_DIR/created-links-$(date -u +%Y%m%dT%H%M%SZ).XXXXXX") || return 1
+    chmod 600 "$export_file" || { rm -f -- "$export_file"; return 1; }
+    ok "本批链接自动保存位置（仅 root 可读）：$export_file"
     for ((i=1; i<=count; i++)); do
         if ((i == 1)); then name="$prefix"; else
             port=$(find_free_port "$((port + 1))") || return 1
@@ -1487,33 +1501,30 @@ interactive_add() {
             sid=$(random_hex 8) || return 1
         fi
         if ! tag=$(add_node_data "$protocol" "$name" "$SERVER_ADDRESS" "$port" "$credential" "$sni" "$private" "$public" "$sid" "${quotas[i-1]}"); then
-            warn "第 $i 条创建失败，前面已成功创建的 $((i-1)) 条节点保留。"
+            warn "第 $i 条创建失败；前面已成功创建的 $((i-1)) 条节点保留，已导出链接不丢失。"
             return 1
         fi
-        ok "已新增 $name：$protocol，端口 $port。"
-        generate_links "$tag" "$SERVER_ADDRESS" || warn '节点已创建，但链接生成失败，请查看节点配置。'
+        ok "已创建：$name｜$protocol｜$SERVER_ADDRESS:$port"
+        if links=$(generate_links "$tag"); then
+            printf '\n----- %s：复制下方完整链接 -----\n%s\n\n' "$name" "$links"
+            printf '%s\n' "$links" >> "$export_file" || warn '链接已显示，但保存到导出文件失败。'
+        else
+            warn '节点已创建，但链接生成失败；请在“导出节点链接”中重试，不要重复创建。'
+        fi
     done
     install_local_shortcut || warn '节点已创建，但 menu 入口未安装成功。'
-    warn '请在服务器提供商安全组及已有防火墙中放行上述端口；流量管理只维护自己的 nftables 限额表。'
+    warn '创建成功不代表外网连通已验证。请在服务器提供商安全组及已有防火墙中放行上述端口。'
 }
 
 interactive_show_link() {
-    local default metadata links link show_qr
+    local default metadata links
     ensure_dependencies || return 1
     choose_node || return 1
     metadata=$(read_metadata) || return 1
     default=$(jq -r --arg tag "$SELECTED_TAG" '.nodes[$tag].server // empty' <<<"$metadata")
     ask_server "$default" || return 1
     links=$(generate_links "$SELECTED_TAG" "$SERVER_ADDRESS") || return 1
-    printf '\n%s\n\n' "$links"
-    if command -v qrencode >/dev/null; then
-        prompt_read '显示二维码？[y/N]：' show_qr || return 1
-        if [[ "${show_qr,,}" == y ]]; then
-            while IFS= read -r link; do [[ -n "$link" ]] && qrencode -t ANSIUTF8 -m 2 -s 1 "$link"; done <<<"$links"
-        fi
-    else
-        ok '如需终端二维码，可在菜单安装 qrencode；链接本身可直接复制导入。'
-    fi
+    printf '\n复制下方完整链接：\n%s\n\n' "$links"
 }
 
 interactive_port() {
@@ -1551,16 +1562,6 @@ interactive_delete() {
     ok '选中节点已删除，完整配置备份保留。'
 }
 
-install_qrencode() {
-    command -v qrencode >/dev/null && { ok 'qrencode 已安装。'; return 0; }
-    if command -v apt-get >/dev/null; then apt-get update && apt-get install -y qrencode
-    elif command -v dnf >/dev/null; then dnf install -y qrencode
-    elif command -v yum >/dev/null; then yum install -y qrencode
-    elif command -v apk >/dev/null; then apk add --no-cache libqrencode-tools
-    elif command -v pacman >/dev/null; then pacman -S --needed --noconfirm qrencode
-    else err '请自行安装 qrencode。'; return 1; fi
-}
-
 show_service_status() {
     local backend
     backend=$(service_backend) || return 1
@@ -1596,44 +1597,102 @@ interactive_quota_reset() {
     quota_enable_runtime && quota_reset_usage "$SELECTED_TAG"
 }
 
+add_node_menu() {
+    local option
+    while true; do
+        printf '\n%s\n' '新增节点（每次支持 1–20 条）' \
+          '1) VLESS + TCP + Reality（默认）' \
+          '2) VMess + WebSocket' \
+          '3) Shadowsocks' \
+          '0) 返回主菜单'
+        prompt_read '请选择协议 [1]：' option || return 0
+        case "${option:-1}" in
+            1) interactive_add vless || warn '本次操作未完成。'; return 0 ;;
+            2) interactive_add vmess || warn '本次操作未完成。'; return 0 ;;
+            3) interactive_add shadowsocks || warn '本次操作未完成。'; return 0 ;;
+            0) return 0 ;;
+            *) warn '请输入菜单中的编号。' ;;
+        esac
+    done
+}
+
+node_management_menu() {
+    local option
+    while true; do
+        printf '\n%s\n' '节点管理' \
+          '1) 修改节点端口' \
+          '2) 重新生成 UUID / 密码' \
+          '3) 删除节点' \
+          '0) 返回主菜单'
+        prompt_read '请选择 [0–3]：' option || return 0
+        case "$option" in
+            1) interactive_port || warn '端口未修改。' ;;
+            2) interactive_rotate || warn '凭据未修改。' ;;
+            3) interactive_delete || warn '节点未删除。' ;;
+            0) return 0 ;;
+            *) warn '请输入菜单中的编号。' ;;
+        esac
+    done
+}
+
+quota_menu() {
+    local option
+    while true; do
+        printf '\n%s\n' '流量管理' \
+          '1) 启用流量管理 / 查看额度和用量' \
+          '2) 修改节点累计额度（保留已用量）' \
+          '3) 手动清零节点用量并恢复额度' \
+          '0) 返回主菜单'
+        prompt_read '请选择 [0–3]：' option || return 0
+        case "$option" in
+            1) interactive_quota_show || warn '流量管理未就绪。' ;;
+            2) interactive_quota_limit || warn '额度未成功修改。' ;;
+            3) interactive_quota_reset || warn '清零未成功完成。' ;;
+            0) return 0 ;;
+            *) warn '请输入菜单中的编号。' ;;
+        esac
+    done
+}
+
+service_menu() {
+    local option
+    while true; do
+        printf '\n%s\n' '服务与工具' \
+          '1) 查看服务状态' \
+          '2) 检查配置并重启服务' \
+          '3) 安装 / 更新快捷命令 menu' \
+          '0) 返回主菜单'
+        prompt_read '请选择 [0–3]：' option || return 0
+        case "$option" in
+            1) show_service_status || warn '无法读取服务状态。' ;;
+            2) manual_validate_restart || warn '检查或重启未成功。' ;;
+            3) install_local_shortcut || warn '本地快捷命令未安装。' ;;
+            0) return 0 ;;
+            *) warn '请输入菜单中的编号。' ;;
+        esac
+    done
+}
+
 main_menu() {
     local option
     while true; do
         printf '\n========== 独立节点管理 v%s ==========\n' "$MANAGER_VERSION"
         printf '%s\n' \
-          '1) 新增 VLESS + TCP + Reality 节点（支持多条）' \
-          '2) 新增 VMess + WebSocket 节点（支持多条）' \
-          '3) 新增 Shadowsocks 节点（支持多条）' \
-          '4) 查看全部节点' \
-          '5) 导出选中节点链接 / 二维码' \
-          '6) 修改选中节点端口' \
-          '7) 重新生成选中节点 UUID / 密码' \
-          '8) 删除选中节点' \
-          '9) 查看服务状态' \
-          '10) 检查配置并重启服务' \
-          '11) 安装/更新本地快捷命令 menu' \
-          '12) 安装二维码工具 qrencode' \
-          '13) 启用流量管理 / 查看每条节点额度和用量' \
-          '14) 修改选中节点累计额度（保留已用量）' \
-          '15) 手动清零选中节点用量并恢复额度' \
+          '1) 新增节点（完成后自动显示链接）' \
+          '2) 查看全部节点' \
+          '3) 导出节点链接' \
+          '4) 节点管理' \
+          '5) 流量管理' \
+          '6) 服务与工具' \
           '0) 退出'
-        prompt_read '请选择 [0–15]：' option || return 0
+        prompt_read '请选择 [0–6]：' option || return 0
         case "$option" in
-            1) interactive_add vless || warn '本次操作未完成。' ;;
-            2) interactive_add vmess || warn '本次操作未完成。' ;;
-            3) interactive_add shadowsocks || warn '本次操作未完成。' ;;
-            4) ensure_dependencies && list_nodes || warn '无法读取节点列表。' ;;
-            5) interactive_show_link || warn '未导出节点。' ;;
-            6) interactive_port || warn '端口未修改。' ;;
-            7) interactive_rotate || warn '凭据未修改。' ;;
-            8) interactive_delete || warn '节点未删除。' ;;
-            9) show_service_status || true ;;
-            10) manual_validate_restart || warn '检查或重启未成功。' ;;
-            11) install_local_shortcut || warn '本地快捷命令未安装。' ;;
-            12) install_qrencode || warn '二维码工具未安装。' ;;
-            13) interactive_quota_show || warn '流量管理未就绪。' ;;
-            14) interactive_quota_limit || warn '额度未成功修改。' ;;
-            15) interactive_quota_reset || warn '清零未成功完成。' ;;
+            1) add_node_menu ;;
+            2) ensure_dependencies && list_nodes || warn '无法读取节点列表。' ;;
+            3) interactive_show_link || warn '未导出节点。' ;;
+            4) node_management_menu ;;
+            5) quota_menu ;;
+            6) service_menu ;;
             0) return 0 ;;
             *) warn '请输入菜单中的编号。' ;;
         esac
