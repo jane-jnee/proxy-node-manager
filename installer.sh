@@ -10,12 +10,12 @@ cleanup_manager_temp() {
 trap cleanup_manager_temp EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-cat > "$manager_temp/proxy-node-manager.sh" <<'PROXY_MANAGER_EMBEDDED_V221_6a559016113994e6b289690b'
+cat > "$manager_temp/proxy-node-manager.sh" <<'PROXY_MANAGER_EMBEDDED_V222_c9049d2747b5469e32730803'
 #!/usr/bin/env bash
 # Customized from dabadabader/install: advertising removed; independent nodes.
 # Run on your own Linux server. Sourcing this file performs no installation.
 
-MANAGER_VERSION='2.2.1'
+MANAGER_VERSION='2.2.2'
 WORK_DIR="${PROXY_WORK_DIR:-/etc/sing-box}"
 CONFIG_FILE="${WORK_DIR}/config.json"
 STATE_DIR="${WORK_DIR}/node-manager"
@@ -1669,6 +1669,182 @@ quota_menu() {
     done
 }
 
+# Uninstall only the management tool, after its active nodes have been removed.
+# Historical state and backups, the shared sing-box core and unrelated nodes stay.
+uninstall_locations() {
+    [[ "$WORK_DIR" == /etc/sing-box && "$STATE_DIR" == /etc/sing-box/node-manager &&
+       "$CONFIG_FILE" == /etc/sing-box/config.json && "$META_FILE" == "$STATE_DIR/nodes.json" &&
+       "$TRAFFIC_ENABLED" == "$STATE_DIR/traffic-enabled" &&
+       "$MANAGER_PATH" == /usr/local/lib/proxy-node-manager/manager.sh &&
+       "$SHORTCUT_PATH" == /usr/local/bin/menu ]] || {
+        err '卸载仅支持标准安装路径；自定义路径请手动核对。'; return 1;
+    }
+    UNINSTALL_UNIT=/etc/systemd/system/proxy-node-quota.service
+    UNINSTALL_DROPIN=/etc/systemd/system/sing-box.service.d/20-proxy-node-quota.conf
+    local directory
+    for directory in "$WORK_DIR" "$STATE_DIR" "$(dirname -- "$MANAGER_PATH")" "$(dirname -- "$SHORTCUT_PATH")" \
+        /etc/systemd/system /etc/systemd/system/sing-box.service.d; do
+        [[ "$(readlink -m -- "$directory")" == "$directory" && ! -L "$directory" ]] || {
+            err "卸载路径包含链接或不规范目录，保留现状：$directory"; return 1;
+        }
+    done
+}
+
+uninstall_shortcut_content() { printf '#!/usr/bin/env bash\nexec bash %q "$@"\n' "$MANAGER_PATH"; }
+
+uninstall_empty_kernel() {
+    local kernel="$1"
+    jq -e '(.nftables | type) == "array" and (.nftables | length) == 0' <<<"$kernel" >/dev/null && return 0
+    quota_validate_kernel "$kernel" || return 1
+    jq -e '
+      all(.nftables[]; has("metainfo") or has("table") or has("chain")) and
+      ([.nftables[] | select(has("chain"))] | length) == 2
+    ' <<<"$kernel" >/dev/null || {
+        err '流量表仍有规则、额度或其他对象，请先正常删除本工具节点并检查流量服务。'; return 1;
+    }
+}
+
+uninstall_preflight() {
+    uninstall_locations || return 1
+    local file self config metadata count fragment overrides backend load_state
+    for file in "$MANAGER_PATH" "$SHORTCUT_PATH" "$CONFIG_FILE" "$META_FILE" "$TRAFFIC_FILE" \
+        "$TRAFFIC_ENABLED" "$UNINSTALL_UNIT" "$UNINSTALL_DROPIN"; do
+        if [[ -e "$file" || -L "$file" ]]; then
+            [[ -f "$file" && ! -L "$file" ]] || { err "发现链接或非普通文件，拒绝卸载：$file"; return 1; }
+        fi
+    done
+    self=$(readlink -f -- "${BASH_SOURCE[0]}") || return 1
+    [[ -f "$MANAGER_PATH" ]] && cmp -s -- "$self" "$MANAGER_PATH" || {
+        err '本地管理程序与正在运行的版本不一致，保留原文件。'; return 1;
+    }
+    if [[ -e "$SHORTCUT_PATH" ]] && ! cmp -s -- "$SHORTCUT_PATH" <(uninstall_shortcut_content); then
+        err 'menu 已被其他程序修改，保留现状。'; return 1
+    fi
+    if [[ -e "$TRAFFIC_ENABLED" ]] && [[ $(cat -- "$TRAFFIC_ENABLED") != cumulative-manual-reset-v1 ]]; then
+        err '流量启用标记不属于本工具，保留现状。'; return 1
+    fi
+    config=$(read_current_config) && metadata=$(read_metadata) || return 1
+    jq -e 'type=="object" and (.nodes|type=="object")' <<<"$metadata" >/dev/null || return 1
+    count=$(jq -er --argjson m "$metadata" '[.inbounds[]? | select($m.nodes[.tag // ""] != null)] | length' <<<"$config") || return 1
+    if ((count > 0)); then
+        err "还有 $count 个本工具节点。请先返回主菜单 4 → 3 逐个删除，再卸载；本次未删除任何节点。"
+        return 1
+    fi
+    if jq -e 'any(.inbounds[]?; (.tag // "") | test("^pnm-(vless|vmess|shadowsocks)-[0-9a-f]{16}$"))' <<<"$config" >/dev/null; then
+        err '发现缺少管理记录的本工具节点，请先核对配置并恢复记录。'; return 1
+    fi
+    UNINSTALL_HAS_UNIT=0; UNINSTALL_HAS_DROPIN=0; UNINSTALL_SYSTEMD=0; UNINSTALL_HAS_SB=0
+    backend=$(service_backend 2>/dev/null) || backend=''
+    [[ "$backend" != systemd ]] || UNINSTALL_SYSTEMD=1
+    if [[ -e "$UNINSTALL_UNIT" || -e "$UNINSTALL_DROPIN" ]]; then
+        ((UNINSTALL_SYSTEMD)) || { err '需要运行中的 systemd 才能安全移除流量服务。'; return 1; }
+    fi
+    if [[ -e "$UNINSTALL_UNIT" ]]; then
+        cmp -s -- "$UNINSTALL_UNIT" <(quota_service_unit) || { err '流量服务文件被修改，拒绝卸载。'; return 1; }
+        UNINSTALL_HAS_UNIT=1
+    fi
+    if [[ -e "$UNINSTALL_DROPIN" ]]; then
+        cmp -s -- "$UNINSTALL_DROPIN" <(quota_singbox_dropin) || { err '流量依赖文件被修改，拒绝卸载。'; return 1; }
+        UNINSTALL_HAS_DROPIN=1
+    fi
+    if ((UNINSTALL_SYSTEMD)); then
+        systemctl show -p Version --value >/dev/null || return 1
+        load_state=$(systemctl show sing-box.service -p LoadState --value 2>/dev/null) || {
+            [[ "$load_state" == not-found ]] || { err '无法核对共享服务的加载状态。'; return 1; }
+        }
+        case "$load_state" in
+            not-found) ;;
+            loaded|masked|error|bad-setting) UNINSTALL_HAS_SB=1 ;;
+            *) err '共享服务状态无法识别，保留现状。'; return 1 ;;
+        esac
+        fragment=$(systemctl show proxy-node-quota.service -p FragmentPath --value 2>/dev/null) || fragment=''
+        overrides=$(systemctl show proxy-node-quota.service -p DropInPaths --value 2>/dev/null) || overrides=''
+        [[ ( -z "$fragment" || "$fragment" == "$UNINSTALL_UNIT" ) && -z "$overrides" ]] || {
+            err '发现其他来源的流量服务或覆盖配置，保留现状。'; return 1;
+        }
+        [[ -z "$fragment" || "$UNINSTALL_HAS_UNIT" == 1 ]] || { err '流量服务来源无法确认。'; return 1; }
+    fi
+    UNINSTALL_KERNEL='{"nftables":[]}'
+    if command -v "$NFT_BIN" >/dev/null; then
+        UNINSTALL_KERNEL=$(quota_read_kernel) && uninstall_empty_kernel "$UNINSTALL_KERNEL" || return 1
+    elif ((UNINSTALL_HAS_UNIT || UNINSTALL_HAS_DROPIN)) || quota_enabled; then
+        err '缺少 nft，无法核对流量表；保留现状。'; return 1
+    fi
+}
+
+uninstall_manager() (
+    uninstall_preflight && acquire_lock && uninstall_preflight || return 1
+    local backup file requires active_before=0 active_after=0 kernel
+    backup=$(mktemp -d "$STATE_DIR/uninstall-backup-$(date -u +%Y%m%dT%H%M%SZ).XXXXXX") || return 1
+    chmod 700 -- "$backup" || return 1
+    for file in "$MANAGER_PATH" "$SHORTCUT_PATH" "$CONFIG_FILE" "$META_FILE" "$TRAFFIC_FILE" \
+        "$TRAFFIC_ENABLED" "$UNINSTALL_UNIT" "$UNINSTALL_DROPIN"; do
+        [[ ! -e "$file" ]] || cp -p -- "$file" "$backup/$(basename -- "$file")" || return 1
+    done
+    ok "卸载备份与记录保留位置：$backup"
+    printf 'in-progress\n' > "$backup/uninstall-status" || return 1
+    if ((UNINSTALL_SYSTEMD)); then
+        systemctl is-active --quiet sing-box.service && active_before=1
+        if ((UNINSTALL_HAS_DROPIN)); then
+            rm -f -- "$UNINSTALL_DROPIN" || return 1
+            if ! systemctl daemon-reload; then
+                cp -p -- "$backup/$(basename -- "$UNINSTALL_DROPIN")" "$UNINSTALL_DROPIN" || true
+                systemctl daemon-reload || true; err '服务重新加载失败，已尝试恢复依赖文件。'; return 1
+            fi
+        fi
+        # Stopping a required unit can stop sing-box. Detach and verify FIRST.
+        requires=''
+        if ((UNINSTALL_HAS_SB)); then
+            requires=$(systemctl show sing-box.service -p Requires --value 2>/dev/null) || requires='__read_failed__'
+        fi
+        if [[ "$requires" == __read_failed__ || " $requires " == *' proxy-node-quota.service '* ]]; then
+            if ((UNINSTALL_HAS_DROPIN)); then
+                cp -p -- "$backup/$(basename -- "$UNINSTALL_DROPIN")" "$UNINSTALL_DROPIN" || true
+                systemctl daemon-reload || true
+            fi
+            err 'sing-box 仍依赖流量服务或无法核验依赖，已停止卸载。'; return 1
+        fi
+        if ((UNINSTALL_HAS_UNIT)); then
+            systemctl stop proxy-node-quota.service && systemctl disable proxy-node-quota.service || {
+                err '流量服务未能停止或取消开机启动，管理程序保留。'; return 1;
+            }
+            if systemctl is-active --quiet proxy-node-quota.service; then err '流量服务仍在运行，管理程序保留。'; return 1; fi
+        fi
+    fi
+    if command -v "$NFT_BIN" >/dev/null; then
+        kernel=$(quota_read_kernel) && uninstall_empty_kernel "$kernel" || return 1
+        if jq -e 'any(.nftables[]; has("table"))' <<<"$kernel" >/dev/null; then
+            "$NFT_BIN" delete table inet "$QUOTA_TABLE" || return 1
+        fi
+    fi
+    if ((UNINSTALL_HAS_UNIT)); then
+        cmp -s -- "$UNINSTALL_UNIT" <(quota_service_unit) && rm -f -- "$UNINSTALL_UNIT" || return 1
+        systemctl daemon-reload || return 1
+    fi
+    if ((UNINSTALL_SYSTEMD)); then
+        systemctl is-active --quiet sing-box.service && active_after=1
+        [[ "$active_before" == "$active_after" ]] || {
+            err '共享 sing-box 的运行状态发生变化，保留管理程序；请核对服务及卸载备份。'; return 1;
+        }
+    fi
+    [[ ! -e "$TRAFFIC_ENABLED" ]] || rm -f -- "$TRAFFIC_ENABLED" || return 1
+    # Recheck exact owned bytes immediately before removing the two entry files.
+    [[ ! -e "$SHORTCUT_PATH" ]] || { cmp -s -- "$SHORTCUT_PATH" <(uninstall_shortcut_content) && rm -f -- "$SHORTCUT_PATH"; } || return 1
+    cmp -s -- "${BASH_SOURCE[0]}" "$MANAGER_PATH" && rm -f -- "$MANAGER_PATH" || return 1
+    printf 'complete\n' > "$backup/uninstall-status" || return 1
+    ok '管理工具已卸载。sing-box 内核、其他节点、历史记录和备份保留；重新安装可使用原安装命令。'
+)
+
+interactive_uninstall() {
+    local confirm
+    uninstall_preflight || return 1
+    printf '\n卸载管理工具：移除 menu、管理程序和本工具的空流量服务/规则。\n保留 sing-box 内核、其他节点、累计记录、已导出链接和备份。\n'
+    prompt_read '确认卸载请输入 UNINSTALL（回车取消）：' confirm || return 0
+    [[ "$confirm" == UNINSTALL ]] || { ok '已取消卸载。'; return 0; }
+    uninstall_manager || { err '卸载未完全完成，管理记录及备份保留，请检查上方提示。'; return 1; }
+    MANAGER_UNINSTALLED=1
+}
+
 service_menu() {
     local option
     while true; do
@@ -1676,12 +1852,15 @@ service_menu() {
           '1) 查看服务状态' \
           '2) 检查配置并重启服务' \
           '3) 安装 / 更新快捷命令 menu' \
+          '4) 卸载本工具（请先删除本工具节点）' \
           '0) 返回主菜单'
-        prompt_read '请选择 [0–3]：' option || return 0
+        prompt_read '请选择 [0–4]：' option || return 0
         case "$option" in
             1) show_service_status || warn '无法读取服务状态。' ;;
             2) manual_validate_restart || warn '检查或重启未成功。' ;;
             3) install_local_shortcut || warn '本地快捷命令未安装。' ;;
+            4) interactive_uninstall || warn '卸载未完成。'
+               [[ ${MANAGER_UNINSTALLED:-0} != 1 ]] || return 0 ;;
             0) return 0 ;;
             *) warn '请输入菜单中的编号。' ;;
         esac
@@ -1707,7 +1886,7 @@ main_menu() {
             3) interactive_show_link || warn '未导出节点。' ;;
             4) node_management_menu ;;
             5) quota_menu ;;
-            6) service_menu ;;
+            6) service_menu; [[ ${MANAGER_UNINSTALLED:-0} != 1 ]] || return 0 ;;
             0) return 0 ;;
             *) warn '请输入菜单中的编号。' ;;
         esac
@@ -1744,6 +1923,6 @@ main() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
-PROXY_MANAGER_EMBEDDED_V221_6a559016113994e6b289690b
+PROXY_MANAGER_EMBEDDED_V222_c9049d2747b5469e32730803
 bash "$manager_temp/proxy-node-manager.sh" "$@"
 exit $?

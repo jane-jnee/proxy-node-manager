@@ -1,124 +1,127 @@
 {
-  "version": "2.2.1",
+  "version": "2.2.2",
   "date": "2026-10-30",
-  "manager_sha256": "6a559016113994e6b289690b40fc79ed9024ab6713e287ee24f4a75096f8a2fb",
-  "installer_sha256": "171e37f95892458ca2ea73ebbe53fa0e49513d385612662b1c5017c3fbda48f9",
-  "change": "acquire_lock uses flock -w 15; quota_tick retains flock -n and status 75",
+  "manager_sha256": "c9049d2747b5469e327308030206f71986d26b4dc571e802d74cd75b4eb4a0c4",
+  "installer_sha256": "f3d4de6292d09fdd429ed5c825773a98d094da61355a141947ef3cdc89ca90b9",
   "this_release_checks": {
-    "linux_live_quota_protocol_systemd_scenarios": 5,
-    "linux_real_flock_scenarios": 3
+    "uninstall_regression_scenarios": 17,
+    "additional_linux_scenarios": 3
   },
-  "this_release_scenario_total": 8,
-  "linux_live": {
-    "manager_sha256": "6a559016113994e6b289690b40fc79ed9024ab6713e287ee24f4a75096f8a2fb",
+  "uninstall_regression": {
+    "scope": "production uninstall functions and actual private filesystem operations; systemctl/nft/lock/location boundaries mocked",
+    "platform": "Linux",
     "status": "passed",
-    "sing_box_version": "1.14.4",
-    "nftables_version": "1.0.2",
-    "scenario_names": [
-      "default_name_zero_quota",
-      "metadata_only_chinese_name",
-      "interactive_explicit_port_1000GB_native_quota",
-      "cap_other_node_and_targeted_reset",
-      "private_systemd_restart_persists_usage"
-    ],
-    "native_1000GB_quota_verified": true,
-    "quota_cap_and_targeted_reset_verified": true,
-    "private_systemd_restart_preserved_usage": true,
-    "cleanup": {
-      "own_table_absent": true,
-      "own_units_inactive": true,
-      "own_unit_files_absent": true,
-      "own_listeners_absent": true,
-      "manager_source_unchanged": true
-    },
-    "isolation_adaptations": [
-      "force generated inbound listen to 127.0.0.1",
-      "private paths and runtime unit names",
-      "stdin prompt adapter and loopback address discovery",
-      "dependency installation and menu shortcut omitted after native dependency checks"
-    ]
-  },
-  "linux_lock_regression": {
-    "status": "passed",
-    "manager_sha256": "6a559016113994e6b289690b40fc79ed9024ab6713e287ee24f4a75096f8a2fb",
+    "manager_sha256": "c9049d2747b5469e327308030206f71986d26b4dc571e802d74cd75b4eb4a0c4",
+    "assertion_count": 127,
+    "summary_zh": "本版在 Linux 临时目录通过 17 个卸载回归场景、127 项断言，涵盖取消、节点阻止、文件归属、符号链接、非空表、依赖解除失败、停止失败和卸载后数据保留。systemctl、nft、路径和锁边界使用模拟。",
     "cases": [
       {
-        "case": "short_holder_foreground_wait_and_exclusivity",
-        "pass": true,
-        "elapsed_ms": 896,
-        "checks": {
-          "waited_for_real_holder": true,
-          "foreground_retained_exclusive_lock": true,
-          "released_on_process_exit": true
-        }
+        "case": "cancel_blank_wrong_and_eof",
+        "pass": true
       },
       {
-        "case": "permanent_holder_timeout_without_config_or_metadata_mutation",
-        "pass": true,
-        "elapsed_ms": 15023,
-        "checks": {
-          "bounded_15_second_timeout": true,
-          "reported_error": true,
-          "config_bytes_unchanged": true,
-          "metadata_bytes_unchanged": true,
-          "no_stale_foreground_lock": true
-        }
+        "case": "active_managed_node_refused",
+        "pass": true
       },
       {
-        "case": "quota_tick_remains_nonblocking_75",
-        "pass": true,
-        "elapsed_ms": 24,
-        "checks": {
-          "contended_tick_status_75": true,
-          "nonblocking_under_1500ms": true,
-          "no_nft_or_service_action": true
-        }
+        "case": "orphan_managed_tag_refused",
+        "pass": true
+      },
+      {
+        "case": "corrupt_metadata_refused",
+        "pass": true
+      },
+      {
+        "case": "foreign_manager_refused",
+        "pass": true
+      },
+      {
+        "case": "foreign_menu_refused",
+        "pass": true
+      },
+      {
+        "case": "symlink_config_refused",
+        "pass": true
+      },
+      {
+        "case": "foreign_quota_unit_refused",
+        "pass": true
+      },
+      {
+        "case": "foreign_dropin_refused",
+        "pass": true
+      },
+      {
+        "case": "foreign_nft_owner_refused",
+        "pass": true
+      },
+      {
+        "case": "populated_owned_table_refused",
+        "pass": true
+      },
+      {
+        "case": "dependency_detach_failure_restores_dropin",
+        "pass": true
+      },
+      {
+        "case": "reload_failure_restores_dropin",
+        "pass": true
+      },
+      {
+        "case": "stop_failure_preserves_manager",
+        "pass": true
+      },
+      {
+        "case": "active_legacy_preserved_success",
+        "pass": true
+      },
+      {
+        "case": "inactive_legacy_preserved_success",
+        "pass": true
+      },
+      {
+        "case": "menu_only_fresh_install_and_route_exit",
+        "pass": true
       }
-    ],
-    "own_processes_stopped": true
+    ]
   },
-  "windows_protocol_baseline": {
-    "tested_manager_version": "2.2.0",
-    "tested_manager_sha256": "9b2be95d1bee22ecb6a3e71084bd1403b2c04ee08cbb32635aa3f524a8e83f6d",
-    "scenarios": 9,
-    "success_cases": 5,
-    "expected_authentication_failures": 4,
-    "server": "sing-box version 1.14.4",
-    "client": "Xray 26.10.21 (Xray, Penetrates Everything.) 1b1647c (go1.27.3 windows/amd64)",
-    "all_passed": true,
-    "repeated_for_v221": false,
-    "process_cleanup": true
+  "additional_linux_regression": {
+    "scope": "real Linux flock, systemd dependency detachment and native empty nft-table removal; private paths/unit aliases; sleeper services stand in for proxy processes",
+    "platform": "Linux",
+    "status": "passed",
+    "manager_sha256": "c9049d2747b5469e327308030206f71986d26b4dc571e802d74cd75b4eb4a0c4",
+    "summary_zh": "另通过 3 个 Linux 隔离场景：取消、活动节点阻止卸载、确认卸载后实际 systemd 依赖解除及原生空 nft 表移除；共享服务仍在运行，配置、内核及历史记录保留。服务进程使用 sleep 替身，未验证代理转发。",
+    "cases": [
+      {
+        "case": "cancel_keeps_real_units_and_files",
+        "pass": true
+      },
+      {
+        "case": "active_managed_node_blocks_uninstall_on_linux",
+        "pass": true
+      },
+      {
+        "case": "confirmed_uninstall_detaches_real_dependency_and_preserves_shared_service_and_records",
+        "pass": true
+      }
+    ]
   },
-  "historical_v220_offline_checks": {
-    "date": "2026-10-29",
-    "configuration_links_rollback": 63,
-    "menu_dispatch": 51,
-    "creation_autoexport_and_qr_removal": 18,
-    "nft_1_0_2_compatibility": 17,
-    "sni_syntax": 19,
-    "assertion_total": 168,
-    "mocked_system_boundary_interactive_scenarios": 9,
-    "repeated_for_v221": false
+  "historical_v221": {
+    "live_linux_scenarios": 5,
+    "real_flock_scenarios": 3,
+    "repeated_for_v222": false
   },
-  "historical_v211_checks": {
-    "baseline_name_scenarios": 5,
-    "quota_regression_assertions": 60,
-    "repeated_for_v221": false
+  "historical_v220": {
+    "windows_protocol_scenarios": 9,
+    "offline_assertions": 168,
+    "mocked_interactive_scenarios": 9,
+    "repeated_for_v222": false
   },
-  "custom_name_only_connection_failure_reproduced": false,
-  "finite_quota_foreground_lock_race_reproduced_on_v220": true,
-  "finite_quota_foreground_lock_race_fixed_in_isolated_v221_tests": true,
-  "qr_code_present_in_runtime": false,
-  "linux_permissions_audited": false,
-  "public_vps_transport_connectivity_verified": false,
-  "deployed_to_user_vps": false,
-  "production_baseline_comparison": {
-    "existing_config_hash_unchanged": true,
-    "existing_service_active_unchanged": true,
-    "existing_service_enabled_unchanged": true,
-    "nft_table_set_unchanged": true
-  },
-  "contains_server_credentials_or_private_logs": false,
   "installer_embedded_manager_byte_identical": true,
-  "installer_launcher_logic_preserved_from_v220": true
+  "installer_launcher_logic_preserved_from_v221": true,
+  "bash_syntax_checks_passed": true,
+  "qr_code_present_in_runtime": false,
+  "production_deployed": false,
+  "production_uninstall_executed": false,
+  "contains_server_credentials_or_private_logs": false
 }

@@ -1,41 +1,55 @@
-# v2.2.1 验证报告
+# v2.2.2 验证报告
 
-2026-10-30。此版修复有限额度节点创建与后台流量任务之间的锁竞争。实际 Linux 测试中，v2.2.0 的默认和中文名称节点均能通信，但启用 1000 GB 额度时遇到后台首次快照占锁，前台立即报锁冲突而停止创建。
+2026-10-30。新增“服务与工具 → 4 → 卸载本工具”。仍有本工具活动节点时拒绝卸载，提示先到主菜单 4 → 3 删除；输入大写 UNINSTALL 才执行。卸载保留共享 sing-box、其他节点、原配置和历史数据；移除本工具入口及确认归属且为空的流量组件。
 
-v2.2.1 将前台 `acquire_lock` 改为最多等待 15 秒；后台 `quota_tick` 继续非阻塞，锁忙时返回 75 并跳过本轮。修复没有改变名称编码、协议参数或额度计算方式。
+## 本版验证
 
-## 本版真实 Linux 隔离测试：5 个场景通过
+本版在 Linux 临时目录通过 17 个卸载回归场景、127 项断言，涵盖取消、节点阻止、文件归属、符号链接、非空表、依赖解除失败、停止失败和卸载后数据保留。systemctl、nft、路径和锁边界使用模拟。
 
-使用实际 sing-box 1.14.4 服务端及客户端、原生 nftables 1.0.2、实际内核规则和私有 systemd 运行时服务。源文件哈希与本包管理脚本一致。
+另通过 3 个 Linux 隔离场景：取消、活动节点阻止卸载、确认卸载后实际 systemd 依赖解除及原生空 nft 表移除；共享服务仍在运行，配置、内核及历史记录保留。服务进程使用 sleep 替身，未验证代理转发。
 
-| 场景 | 已验证结果 |
+| 场景 | 结果 |
 | --- | --- |
-| 默认名称、额度 0 | VLESS + REALITY 认证成功，HTTP 200，随机响应完整一致 |
-| 仅改中文备注及保留字符 | 同一端点可继续认证及获取完整响应 |
-| 实际交互指定端口、1000 GB 额度 | 创建成功；实际内核额度为 1000000000000 字节，计数递增且规则核验通过 |
-| 单节点封顶及定向清零 | 有限额度节点在实际传输中被阻断；不限量节点仍可用；仅清零目标节点后恢复通信 |
-| 私有 systemd 服务重启 | 重启前后累计记录均为 62083 字节，重启后实际请求成功 |
+| cancel_blank_wrong_and_eof | 通过 |
+| active_managed_node_refused | 通过 |
+| orphan_managed_tag_refused | 通过 |
+| corrupt_metadata_refused | 通过 |
+| foreign_manager_refused | 通过 |
+| foreign_menu_refused | 通过 |
+| symlink_config_refused | 通过 |
+| foreign_quota_unit_refused | 通过 |
+| foreign_dropin_refused | 通过 |
+| foreign_nft_owner_refused | 通过 |
+| populated_owned_table_refused | 通过 |
+| dependency_detach_failure_restores_dropin | 通过 |
+| reload_failure_restores_dropin | 通过 |
+| stop_failure_preserves_manager | 通过 |
+| active_legacy_preserved_success | 通过 |
+| inactive_legacy_preserved_success | 通过 |
+| menu_only_fresh_install_and_route_exit | 通过 |
 
-隔离适配仅包括回环监听、私有路径和服务名、标准输入提示适配及本机地址发现；已具备依赖时不重复安装依赖或写入 menu 入口。没有替代公私钥派生、链接生成、额度算法、原生 nft 命令或真实数据传输。测试结束确认本次表、服务、服务文件和监听均已清理。
+## 附加 Linux 隔离验证
 
-## 本版真实 Linux 锁竞争回归：3 个场景通过
+范围：real Linux flock, systemd dependency detachment and native empty nft-table removal; private paths/unit aliases; sleeper services stand in for proxy processes
 
-| 场景 | 已验证结果 |
+| 场景 | 结果 |
 | --- | --- |
-| 短暂占锁 | 前台实际等待 896 毫秒后获得排他锁；进程退出释放锁 |
-| 持续占锁 | 15023 毫秒后明确超时，配置与元数据字节未变，无残留前台锁 |
-| 后台锁忙 | tick 在 24 毫秒内返回 75，没有执行 nft 或服务操作 |
+| cancel_keeps_real_units_and_files | 通过 |
+| active_managed_node_blocks_uninstall_on_linux | 通过 |
+| confirmed_uninstall_detaches_real_dependency_and_preserves_shared_service_and_records | 通过 |
 
-此回归使用本包实际锁函数及 Linux flock；没有为这 3 项启动网络、服务或 nft 规则。
+## 安装包与源码
 
-## 协议基线和历史结果
+- 本版管理脚本 SHA256：`c9049d2747b5469e327308030206f71986d26b4dc571e802d74cd75b4eb4a0c4`。
+- 安装器内嵌管理脚本与该版本逐字节一致；保留 v2.2.1 安装器的启动和临时文件清理逻辑。
+- 管理脚本及安装器通过 Bash 语法检查；七个发布文件及 ZIP 内容均进行哈希/字节一致性检查。
 
-2026-10-30 在 v2.2.0 上完成 9 个 Windows 实际核心场景：真实 sing-box 1.14.4 服务端与 Xray 26.10.21 客户端，连接字段只从实际导出的 URI 解析。默认、英文、中文、特殊符号名称及独立端口共 5 次请求成功；两个端点的错误 UUID、公钥共 4 次认证对照均失败。所有本次进程和监听已退出，临时凭据已脱敏。这是前一版的协议基线，没有冒称 v2.2.1 在 Windows 上重复完成这 9 项。
+## 历史结果
 
-v2.2.0 在 2026-10-29 的 168 项离线断言和 9 个采用系统边界模拟的交互场景作为历史结果保留，未作为 v2.2.1 本次重跑数量。历史离线断言分项为配置/链接/回滚 63、菜单 51、创建导出与二维码移除 18、nft JSON 兼容 17、SNI 语法 19。v2.1.1 的 5 个名称对照和 60 项流量回归同样是历史结果。
+v2.2.1 在 2026-10-30 的 5 个真实 Linux 协议/额度/systemd 隔离场景及 3 个真实 flock 场景属于历史结果，未冒称是 v2.2.2 重新执行。v2.2.0 的 9 个 Windows 核心互通场景、168 个离线断言和 9 个系统边界模拟交互场景同样只作为历史基线。
 
-## 范围
+## 范围与数据
 
-本次实际证据支持名称只影响备注，并修复了已复现的有限额度创建锁竞争。发布包未部署或更新生产 VPS；测试前后原有配置哈希、sing-box 服务 active/enabled 状态及 nft 表集合一致。隔离回环通信不能证明公网端口、安全组或所有客户端导入界面均可用。没有专门断言全部 Linux 文件权限，不能把实际 chmod 调用等同于权限审计。没有把测试请求量或流量额度当作线上运行结果。
+本报告的当前场景数仅包含上列、与本版源码哈希一致的测试。服务或 nft 边界采用模拟时，不将其称为原生 systemd/nft 执行结果。包未部署到生产服务器，也未在生产服务器执行卸载。公网入口、云安全组及各客户端导入界面不属于此次卸载功能验证范围。
 
-包内仅含发布代码、说明、来源、验证摘要及校验和；不含服务器配置、密钥、完整节点链接或私有测试日志。
+发布包只有代码、说明、来源和脱敏验证摘要；不包含服务器配置、密钥、完整节点链接或私有日志。卸载备份及累计记录保留在服务器私有目录，不上传代码仓库。
