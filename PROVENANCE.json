@@ -4,10 +4,10 @@
   "bytes": 27329,
   "sha256": "949b360ee9cf92464cd45bb41505e05a6abdc9c046495191f7d2da5de36b7af2",
   "executed": false,
-  "custom_version": "2.2.0",
+  "custom_version": "2.2.1",
   "original_executed_locally": false,
   "embedded_server_credentials": false,
-  "public_hosting_at_test_time": "not performed",
+  "public_hosting_at_test_time": "v2.2.1 package prepared locally; publication handled separately",
   "publication_repository": "https://github.com/jane-jnee/proxy-node-manager",
   "installation_url": "https://raw.githubusercontent.com/jane-jnee/proxy-node-manager/main/installer.sh",
   "compatibility_fix": "nftables 1.0.2 table comment omitted from JSON",
@@ -17,6 +17,21 @@
     "six main entries with submenus",
     "private per-batch automatic URI export",
     "QR feature removed",
-    "explicit display-name and connection-field preview"
-  ]
+    "explicit display-name and connection-field preview",
+    "bounded foreground lock wait fixes quota-daemon startup contention"
+  ],
+  "release_date": "2026-10-30",
+  "lock_fix_date": "2026-10-30",
+  "upstream_snapshot_note": "source/http_status/bytes/sha256 describe the previously retrieved upstream snapshot; not fetched again for this patch",
+  "base_custom_version": "2.2.0",
+  "base_custom_manager_sha256": "9b2be95d1bee22ecb6a3e71084bd1403b2c04ee08cbb32635aa3f524a8e83f6d",
+  "manager_sha256": "6a559016113994e6b289690b40fc79ed9024ab6713e287ee24f4a75096f8a2fb",
+  "production_deployed": false,
+  "production_baseline_comparison": "existing config hash, service active/enabled state and nft table identities unchanged before/after isolated tests",
+  "change": "foreground lock waits up to 15 seconds for short quota snapshots; daemon remains nonblocking with status 75",
+  "validation": {
+    "linux_native_quota_and_systemd_scenarios": 5,
+    "linux_real_flock_scenarios": 3,
+    "windows_v220_real_protocol_baseline_scenarios": 9
+  }
 }

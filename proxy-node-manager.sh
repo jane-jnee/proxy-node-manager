@@ -2,7 +2,7 @@
 # Customized from dabadabader/install: advertising removed; independent nodes.
 # Run on your own Linux server. Sourcing this file performs no installation.
 
-MANAGER_VERSION='2.2.0'
+MANAGER_VERSION='2.2.1'
 WORK_DIR="${PROXY_WORK_DIR:-/etc/sing-box}"
 CONFIG_FILE="${WORK_DIR}/config.json"
 STATE_DIR="${WORK_DIR}/node-manager"
@@ -44,7 +44,9 @@ acquire_lock() {
     prepare_workspace || return 1
     command -v flock >/dev/null || { err '缺少 flock，请先安装依赖。'; return 1; }
     exec 9>"$STATE_DIR/manager.lock" || return 1
-    flock -n 9 || { err '另一个节点管理进程正在修改配置，请关闭它后重试。'; return 1; }
+    # Foreground operations wait out the quota daemon's short snapshots.
+    # The daemon keeps its separate nonblocking lock and skips busy ticks.
+    flock -w 15 9 || { err '等待配置锁超时（15 秒）；其他操作仍在修改配置，请稍后重试。'; return 1; }
     LOCK_HELD=1
 }
 

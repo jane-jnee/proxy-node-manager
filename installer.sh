@@ -10,12 +10,12 @@ cleanup_manager_temp() {
 trap cleanup_manager_temp EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-cat > "$manager_temp/proxy-node-manager.sh" <<'PROXY_MANAGER_EMBEDDED_V220_9b2be95d1bee22ecb6a3e710'
+cat > "$manager_temp/proxy-node-manager.sh" <<'PROXY_MANAGER_EMBEDDED_V221_6a559016113994e6b289690b'
 #!/usr/bin/env bash
 # Customized from dabadabader/install: advertising removed; independent nodes.
 # Run on your own Linux server. Sourcing this file performs no installation.
 
-MANAGER_VERSION='2.2.0'
+MANAGER_VERSION='2.2.1'
 WORK_DIR="${PROXY_WORK_DIR:-/etc/sing-box}"
 CONFIG_FILE="${WORK_DIR}/config.json"
 STATE_DIR="${WORK_DIR}/node-manager"
@@ -57,7 +57,9 @@ acquire_lock() {
     prepare_workspace || return 1
     command -v flock >/dev/null || { err '缺少 flock，请先安装依赖。'; return 1; }
     exec 9>"$STATE_DIR/manager.lock" || return 1
-    flock -n 9 || { err '另一个节点管理进程正在修改配置，请关闭它后重试。'; return 1; }
+    # Foreground operations wait out the quota daemon's short snapshots.
+    # The daemon keeps its separate nonblocking lock and skips busy ticks.
+    flock -w 15 9 || { err '等待配置锁超时（15 秒）；其他操作仍在修改配置，请稍后重试。'; return 1; }
     LOCK_HELD=1
 }
 
@@ -1742,6 +1744,6 @@ main() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
-PROXY_MANAGER_EMBEDDED_V220_9b2be95d1bee22ecb6a3e710
+PROXY_MANAGER_EMBEDDED_V221_6a559016113994e6b289690b
 bash "$manager_temp/proxy-node-manager.sh" "$@"
 exit $?
